@@ -31,6 +31,10 @@ jobs:
       - name: Set Image Tag
         id: vars
         run: |
+          # 处理仓库名为全小写
+          REPO_LOWER=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
+          echo "repo_lower=${REPO_LOWER}" >> $GITHUB_OUTPUT
+          
           # 如果是手动触发，使用输入的值；如果是 push 触发，使用分支名
           if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
             echo "tag=${{ github.event.inputs.image_tag }}" >> $GITHUB_OUTPUT
@@ -44,4 +48,4 @@ jobs:
           context: .
           file: ./Dockerfile
           push: true
-          tags: ghcr.io/${{ github.repository }}:${{ steps.vars.outputs.tag }}
+          tags: ghcr.io/${{ steps.vars.outputs.repo_lower }}:${{ steps.vars.outputs.tag }}
