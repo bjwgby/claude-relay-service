@@ -286,6 +286,168 @@ class ApiKeyService {
     }
   }
 
+// 🔄 生成指定值的API Key 
+  async generateApiKeyWithValue(options = {}) {
+    const {
+      name,
+      description,
+      apiKey: customApiKey, // 新增：自定义API Key值
+      tokenLimit,
+      expiresAt,
+      claudeAccountId,
+      claudeConsoleAccountId,
+      geminiAccountId,
+      openaiAccountId,  
+      azureOpenaiAccountId,
+      bedrockAccountId,
+      droidAccountId,
+      permissions,
+      concurrencyLimit,
+      rateLimitWindow, 
+      rateLimitRequests,
+      rateLimitCost,
+      enableModelRestriction,
+      restrictedModels,
+      enableClientRestriction,
+      allowedClients,
+      allow1mContext,
+      dailyCostLimit,
+      totalCostLimit,
+      weeklyOpusCostLimit,
+      tags,
+      activationDays,
+      activationUnit,
+      expirationMode,
+      icon,
+      serviceRates,
+      weeklyResetDay,
+      weeklyResetHour,
+      isActive = true
+    } = options
+
+    // 验证自定义API Key格式
+    if (!customApiKey || !customApiKey.startsWith(this.prefix)) {
+      throw new Error(`API key must start with prefix: ${this.prefix}`)
+    }
+
+    if (customApiKey.length < 10 || customApiKey.length > 512) {
+      throw new Error('API key must be between 10 and 512 characters')
+    }
+    const keyId = uuidv4()
+    const hashedKey = this._hashApiKey(customApiKey)
+  
+    // 检查API Key是否已存在
+    const existingKey = await redis.findApiKeyByHash(hashedKey)
+    if (existingKey) {
+      throw new Error('API key already exists')
+    }
+
+    // 构建keyData（与generateApiKey相同的结构)
+    const keyData = {
+      id: keyId,
+      name,
+      description,
+      apiKey: hashedKey,
+      tokenLimit: String(tokenLimit ?? 0),
+      concurrencyLimit: String(concurrencyLimit ?? 0),
+      rateLimitWindow: String(rateLimitWindow ?? 0),
+      rateLimitRequests: String(rateLimitRequests ?? 0),
+      rateLimitCost: String(rateLimitCost ?? 0),
+      isActive: String(isActive),
+      claudeAccountId: claudeAccountId || '',
+      claudeConsoleAccountId: claudeConsoleAccountId || '',
+      geminiAccountId: geminiAccountId || '',
+      openaiAccountId: openaiAccountId || '',
+      azureOpenaiAccountId: azureOpenaiAccountId || '',
+      bedrockAccountId: bedrockAccountId || '',
+      droidAccountId: droidAccountId || '',
+      permissions: JSON.stringify(normalizePermissions(permissions)),
+      enableModelRestriction: String(enableModelRestriction),
+      restrictedModels: JSON.stringify(restrictedModels || []),
+      enableClientRestriction: String(enableClientRestriction || false),
+      allowedClients: JSON.stringify(allowedClients || []),
+      allow1mContext: String(allow1mContext || false),
+      dailyCostLimit: String(dailyCostLimit || 0),
+      totalCostLimit: String(totalCostLimit || 0),
+      weeklyOpusCostLimit: String(weeklyOpusCostLimit || 0),
+      tags: JSON.stringify(tags || []),
+      activationDays: String(activationDays || 0),
+      activationUnit: activationUnit || 'days',
+      expirationMode: expirationMode || 'fixed',
+      isActivated: expirationMode === 'fixed' ? 'true' : 'false',
+      activatedAt: expirationMode === 'fixed' ? new Date().toISOString() : '',
+      createdAt: new Date().toISOString(),
+      lastUsedAt: '',
+      expiresAt: expirationMode === 'fixed' ? expiresAt || '' : '',
+      createdBy: options.createdBy || 'admin',
+      userId: options.userId || '',
+      userUsername: options.userUsername || '',
+      icon: icon || '',
+      serviceRates: JSON.stringify(serviceRates || {}),
+      weeklyResetDay: String(weeklyResetDay || 1),
+      weeklyResetHour: String(weeklyResetHour || 0)
+    }
+
+    // 保存API Key数据并建立哈希映射
+    await redis.setApiKey(keyId, keyData, hashedKey)
+  
+    // 同步添加到索引（与generateApiKey相同的逻辑) 
+    try {
+      const apiKeyIndexService = require('./apiKeyIndexService')
+      await apiKeyIndexService.addToIndex({
+        id: keyId,
+        name: keyData.name,
+        createdAt: keyData.createdAt,
+        lastUsedAt: keyData.lastUsedAt,
+        isActive: keyData.isActive === 'true',
+        isDeleted: false,
+        tags: JSON.parse(keyData.tags || '[]')
+      })
+    } catch (err) {  
+      logger.warn(`Failed to add key ${keyId} to API Key index:`, err.message)  
+    }  
+  
+    logger.success(`🔑 Generated custom API key: ${name} (${keyId})`)  
+  
+    return {  
+      id: keyId,  
+      apiKey: customApiKey, // 返回用户指定的完整key  
+      name: keyData.name,  
+      description: keyData.description,  
+      tokenLimit: parseInt(keyData.tokenLimit),  
+      concurrencyLimit: parseInt(keyData.concurrencyLimit),  
+      rateLimitWindow: parseInt(keyData.rateLimitWindow || 0),  
+      rateLimitRequests: parseInt(keyData.rateLimitRequests || 0),  
+      rateLimitCost: parseFloat(keyData.rateLimitCost || 0),  
+      isActive: keyData.isActive === 'true',  
+      claudeAccountId: keyData.claudeAccountId,  
+      claudeConsoleAccountId: keyData.claudeConsoleAccountId,  
+      geminiAccountId: keyData.geminiAccountId,  
+      openaiAccountId: keyData.openaiAccountId,  
+      azureOpenaiAccountId: keyData.azureOpenaiAccountId,  
+      bedrockAccountId: keyData.bedrockAccountId,  
+      droidAccountId: keyData.droidAccountId,  
+      permissions: normalizePermissions(keyData.permissions),  
+      enableModelRestriction: keyData.enableModelRestriction === 'true',  
+      restrictedModels: JSON.parse(keyData.restrictedModels),  
+      enableClientRestriction: keyData.enableClientRestriction === 'true',  
+      allowedClients: JSON.parse(keyData.allowedClients || '[]'),  
+      dailyCostLimit: parseFloat(keyData.dailyCostLimit || 0),  
+      totalCostLimit: parseFloat(keyData.totalCostLimit || 0),  
+      weeklyOpusCostLimit: parseFloat(keyData.weeklyOpusCostLimit || 0),  
+      tags: JSON.parse(keyData.tags || '[]'),  
+      activationDays: parseInt(keyData.activationDays || 0),  
+      activationUnit: keyData.activationUnit || 'days',  
+      expirationMode: keyData.expirationMode || 'fixed',  
+      isActivated: keyData.isActivated === 'true',  
+      activatedAt: keyData.activatedAt,  
+      createdAt: keyData.createdAt,  
+      expiresAt: keyData.expiresAt,  
+      createdBy: keyData.createdBy,  
+      serviceRates: JSON.parse(keyData.serviceRates || '{}')  
+    }  
+  }
+
   // 🔍 验证API Key
   async validateApiKey(apiKey) {
     try {

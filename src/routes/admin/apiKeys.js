@@ -1689,6 +1689,118 @@ router.post('/api-keys', authenticateAdmin, async (req, res) => {
   }
 })
 
+// 创建指定值的API Key
+router.post('/api-keys/custom', authenticateAdmin, async (req, res) => {
+  try {
+    const {
+      name,
+      description,
+      apiKey, // 新增：用户指定的API Key值
+      tokenLimit,
+      expiresAt,
+      claudeAccountId,
+      claudeConsoleAccountId,
+      geminiAccountId,
+      openaiAccountId,
+      bedrockAccountId,
+      droidAccountId,
+      permissions,
+      concurrencyLimit,
+      rateLimitWindow,
+      rateLimitRequests,
+      rateLimitCost,
+      enableModelRestriction,
+      restrictedModels,
+      enableClientRestriction,
+      allowedClients,
+      allow1mContext,
+      dailyCostLimit,
+      totalCostLimit,
+      weeklyOpusCostLimit,
+      tags,
+      activationDays,
+      activationUnit,
+      expirationMode,
+      icon,
+      serviceRates,
+      weeklyResetDay,
+      weeklyResetHour
+    } = req.body
+
+    // 输入验证
+    if (!name || typeof name !== 'string' || name.trim().length === 0) {
+      return res.status(400).json({ error: 'Name is required and must be a non-empty string' })
+    }
+
+    if (!apiKey || typeof apiKey !== 'string' || apiKey.trim().length === 0) {
+      return res.status(400).json({ error: 'API key value is required and must be a non-empty string' })
+    }
+
+    // 验证API Key格式
+    const config = require('../../config/config')
+    const prefix = config.security?.apiKeyPrefix || 'cr_'
+    if (!apiKey.startsWith(prefix)) {
+      return res.status(400).json({ error: `API key must start with prefix: ${prefix}` })
+    }
+
+    if (apiKey.length < 10 || apiKey.length > 512) {
+      return res.status(400).json({ error: 'API key must be between 10 and 512 characters' })
+    }
+
+    // 其他验证逻辑（与现有POST /api-keys相同）
+    if (name.length > 100) {
+      return res.status(400).json({ error: 'Name must be less than 100 characters' })
+    }
+
+    // ... 其他字段验证逻辑
+
+    const newKey = await apiKeyService.generateApiKeyWithValue({
+      name: name.trim(),
+      description: description?.trim() || '',
+      apiKey: apiKey.trim(), // 传递用户指定的API Key
+      tokenLimit,
+      expiresAt,
+      claudeAccountId,
+      claudeConsoleAccountId,
+      geminiAccountId,
+      openaiAccountId,
+      bedrockAccountId,
+      droidAccountId,
+      permissions,
+      concurrencyLimit,
+      rateLimitWindow,
+      rateLimitRequests,
+      rateLimitCost,
+      enableModelRestriction,
+      restrictedModels,
+      enableClientRestriction,
+      allowedClients,
+      allow1mContext,
+      dailyCostLimit,
+      totalCostLimit,
+      weeklyOpusCostLimit,
+      tags,
+      activationDays,
+      activationUnit,
+      expirationMode,
+      icon,
+      serviceRates,
+      weeklyResetDay: weeklyResetDay !== undefined && weeklyResetDay !== null && weeklyResetDay !== ''
+        ? Number(weeklyResetDay)
+        : 1,
+      weeklyResetHour: weeklyResetHour !== undefined && weeklyResetHour !== null && weeklyResetHour !== ''
+        ? Number(weeklyResetHour)
+        : 0
+    })
+
+    logger.success(`🔑 Admin created custom API key: ${name}`)
+    return res.json({ success: true, data: newKey })
+  } catch (error) {
+    logger.error('❌ Failed to create custom API key:', error)
+    return res.status(500).json({ error: 'Failed to create custom API key', message: error.message })
+  }
+})
+
 // 批量创建API Keys
 router.post('/api-keys/batch', authenticateAdmin, async (req, res) => {
   try {
