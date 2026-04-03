@@ -1737,7 +1737,7 @@ router.post('/api-keys/custom', authenticateAdmin, async (req, res) => {
     }
 
     // 验证API Key格式
-    const config = require('../../config/config')
+    const config = require('../../../config/config')
     const prefix = config.security?.apiKeyPrefix || 'cr_'
     if (!apiKey.startsWith(prefix)) {
       return res.status(400).json({ error: `API key must start with prefix: ${prefix}` })
