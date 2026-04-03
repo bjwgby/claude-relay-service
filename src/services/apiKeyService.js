@@ -448,6 +448,170 @@ class ApiKeyService {
     }  
   }
 
+// 🔄 使用预哈希值创建API Key  
+  async generateApiKeyWithHashedValue(options = {}) {  
+    const {  
+      name,  
+      description,  
+      hashedApiKey, // 预哈希的API Key值  
+      tokenLimit,  
+      expiresAt,  
+      claudeAccountId,  
+      claudeConsoleAccountId,  
+      geminiAccountId,  
+      openaiAccountId,  
+      azureOpenaiAccountId,  
+      bedrockAccountId,  
+      droidAccountId,  
+      permissions,  
+      concurrencyLimit,  
+      rateLimitWindow,  
+      rateLimitRequests,  
+      rateLimitCost,  
+      enableModelRestriction,  
+      restrictedModels,  
+      enableClientRestriction,  
+      allowedClients,  
+      allow1mContext,  
+      dailyCostLimit,  
+      totalCostLimit,  
+      weeklyOpusCostLimit,  
+      tags,  
+      activationDays,  
+      activationUnit,  
+      expirationMode,  
+      icon,  
+      serviceRates,  
+      weeklyResetDay,  
+      weeklyResetHour,  
+      isActive = true  
+    } = options  
+  
+  // 验证预哈希的API Key  
+    if (!hashedApiKey || typeof hashedApiKey !== 'string') {  
+      throw new Error('Hashed API key is required and must be a string')  
+    }  
+  
+  // 验证哈希值格式（应该是64字符的十六进制）  
+    if (!/^[a-f0-9]{64}$/i.test(hashedApiKey)) {  
+      throw new Error('Invalid hashed API key format. Expected 64-character hexadecimal string')  
+    }  
+  
+    const keyId = uuidv4()  
+  
+  // 构建keyData（与generateApiKey相同的结构，但apiKey字段直接使用哈希值）  
+    const keyData = {  
+      id: keyId,  
+      name,  
+      description,  
+      apiKey: hashedApiKey, // 直接使用预哈希值  
+      tokenLimit: String(tokenLimit ?? 0),  
+      concurrencyLimit: String(concurrencyLimit ?? 0),  
+      rateLimitWindow: String(rateLimitWindow ?? 0),  
+      rateLimitRequests: String(rateLimitRequests ?? 0),  
+      rateLimitCost: String(rateLimitCost ?? 0),  
+      isActive: String(isActive),  
+      claudeAccountId: claudeAccountId || '',  
+      claudeConsoleAccountId: claudeConsoleAccountId || '',  
+      geminiAccountId: geminiAccountId || '',  
+      openaiAccountId: openaiAccountId || '',  
+      azureOpenaiAccountId: azureOpenaiAccountId || '',  
+      bedrockAccountId: bedrockAccountId || '',  
+      droidAccountId: droidAccountId || '',  
+      permissions: JSON.stringify(normalizePermissions(permissions)),  
+      enableModelRestriction: String(enableModelRestriction),  
+      restrictedModels: JSON.stringify(restrictedModels || []),  
+      enableClientRestriction: String(enableClientRestriction || false),  
+      allowedClients: JSON.stringify(allowedClients || []),  
+      allow1mContext: String(allow1mContext || false),  
+      dailyCostLimit: String(dailyCostLimit || 0),  
+      totalCostLimit: String(totalCostLimit || 0),  
+      weeklyOpusCostLimit: String(weeklyOpusCostLimit || 0),  
+      tags: JSON.stringify(tags || []),  
+      activationDays: String(activationDays || 0),  
+      activationUnit: activationUnit || 'days',  
+      expirationMode: expirationMode || 'fixed',  
+      isActivated: expirationMode === 'fixed' ? 'true' : 'false',  
+      activatedAt: expirationMode === 'fixed' ? new Date().toISOString() : '',  
+      createdAt: new Date().toISOString(),  
+      lastUsedAt: '',  
+      expiresAt: expirationMode === 'fixed' ? expiresAt || '' : '',  
+      createdBy: options.createdBy || 'admin',  
+      userId: options.userId || '',  
+      userUsername: options.userUsername || '',  
+      icon: icon || '',  
+      serviceRates: JSON.stringify(serviceRates || {}),  
+      weeklyResetDay: String(weeklyResetDay || 1),  
+      weeklyResetHour: String(weeklyResetHour || 0)  
+    }  
+  
+  // 保存API Key数据并建立哈希映射  
+    await redis.setApiKey(keyId, keyData, hashedApiKey)  
+  
+  // 同步添加到费用排序索引  
+    try {  
+      const costRankService = require('./costRankService')  
+      await costRankService.addKeyToIndexes(keyId)  
+    } catch (err) {  
+      logger.warn(`Failed to add key ${keyId} to cost rank indexes:`, err.message)  
+    }  
+  
+  // 同步添加到 API Key 索引  
+    try {  
+      const apiKeyIndexService = require('./apiKeyIndexService')  
+      await apiKeyIndexService.addToIndex({  
+        id: keyId,  
+        name: keyData.name,  
+        createdAt: keyData.createdAt,  
+        lastUsedAt: keyData.lastUsedAt,  
+        isActive: keyData.isActive === 'true',  
+        isDeleted: false,  
+        tags: JSON.parse(keyData.tags || '[]')  
+      })  
+    } catch (err) {  
+      logger.warn(`Failed to add key ${keyId} to API Key index:`, err.message)  
+    }  
+  
+    logger.success(`🔑 Created API key with hash: ${name} (${keyId})`)  
+  
+    return {  
+      id: keyId,  
+      name: keyData.name,  
+      description: keyData.description,  
+      tokenLimit: parseInt(keyData.tokenLimit),  
+      concurrencyLimit: parseInt(keyData.concurrencyLimit),  
+      rateLimitWindow: parseInt(keyData.rateLimitWindow || 0),  
+      rateLimitRequests: parseInt(keyData.rateLimitRequests || 0),  
+      rateLimitCost: parseFloat(keyData.rateLimitCost || 0),  
+      isActive: keyData.isActive === 'true',  
+      claudeAccountId: keyData.claudeAccountId,  
+      claudeConsoleAccountId: keyData.claudeConsoleAccountId,  
+      geminiAccountId: keyData.geminiAccountId,  
+      openaiAccountId: keyData.openaiAccountId,  
+      azureOpenaiAccountId: keyData.azureOpenaiAccountId,  
+      bedrockAccountId: keyData.bedrockAccountId,  
+      droidAccountId: keyData.droidAccountId,  
+      permissions: normalizePermissions(keyData.permissions),  
+      enableModelRestriction: keyData.enableModelRestriction === 'true',  
+      restrictedModels: JSON.parse(keyData.restrictedModels),  
+      enableClientRestriction: keyData.enableClientRestriction === 'true',  
+      allowedClients: JSON.parse(keyData.allowedClients || '[]'),  
+      dailyCostLimit: parseFloat(keyData.dailyCostLimit || 0),  
+      totalCostLimit: parseFloat(keyData.totalCostLimit || 0),  
+      weeklyOpusCostLimit: parseFloat(keyData.weeklyOpusCostLimit || 0),  
+      tags: JSON.parse(keyData.tags || '[]'),  
+      activationDays: parseInt(keyData.activationDays || 0),  
+      activationUnit: keyData.activationUnit || 'days',  
+      expirationMode: keyData.expirationMode || 'fixed',  
+      isActivated: keyData.isActivated === 'true',  
+      activatedAt: keyData.activatedAt,  
+      createdAt: keyData.createdAt,  
+      expiresAt: keyData.expiresAt,  
+      createdBy: keyData.createdBy,  
+      serviceRates: JSON.parse(keyData.serviceRates || '{}')  
+    }  
+  }
+
   // 🔍 验证API Key
   async validateApiKey(apiKey) {
     try {

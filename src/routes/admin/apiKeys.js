@@ -1801,6 +1801,116 @@ router.post('/api-keys/custom', authenticateAdmin, async (req, res) => {
   }
 })
 
+// 使用预哈希值创建API Key
+router.post('/api-keys/customhash', authenticateAdmin, async (req, res) => {
+  try {
+    const {
+      name,
+      description,
+      hashedApiKey, // 预哈希的API Key值
+      tokenLimit,
+      expiresAt,
+      claudeAccountId,
+      claudeConsoleAccountId,
+      geminiAccountId,
+      openaiAccountId,
+      bedrockAccountId,
+      droidAccountId,
+      permissions,
+      concurrencyLimit,
+      rateLimitWindow,
+      rateLimitRequests,
+      rateLimitCost,
+      enableModelRestriction,
+      restrictedModels,
+      enableClientRestriction,
+      allowedClients,
+      allow1mContext,
+      dailyCostLimit,
+      totalCostLimit,
+      weeklyOpusCostLimit,
+      tags,
+      activationDays,
+      activationUnit,
+      expirationMode,
+      icon,
+      serviceRates,
+      weeklyResetDay,
+      weeklyResetHour
+    } = req.body
+
+    // 输入验证
+    if (!name || typeof name !== 'string' || name.trim().length === 0) {
+      return res.status(400).json({ error: 'Name is required and must be a non-empty string' })
+    }
+
+    if (!hashedApiKey || typeof hashedApiKey !== 'string' || hashedApiKey.trim().length === 0) {
+      return res.status(400).json({ error: 'Hashed API key is required and must be a non-empty string' })
+    }
+
+    // 验证哈希值格式
+    if (!/^[a-f0-9]{64}$/i.test(hashedApiKey)) {
+      return res.status(400).json({ error: 'Invalid hashed API key format. Expected 64-character hexadecimal string' })
+    }
+
+    // 检查哈希值是否已存在
+    const existingKey = await redis.findApiKeyByHash(hashedApiKey)
+    if (existingKey) {
+      return res.status(400).json({ error: 'Hashed API key already exists' })
+    }
+
+    // 其他验证逻辑（与现有POST /api-keys相同）
+    if (name.length > 100) {
+      return res.status(400).json({ error: 'Name must be less than 100 characters' })
+    }
+
+    const newKey = await apiKeyService.generateApiKeyWithHashedValue({
+      name: name.trim(),
+      description: description?.trim() || '',
+      hashedApiKey: hashedApiKey.trim(),
+      tokenLimit,
+      expiresAt,
+      claudeAccountId,
+      claudeConsoleAccountId,
+      geminiAccountId,
+      openaiAccountId,
+      bedrockAccountId,
+      droidAccountId,
+      permissions,
+      concurrencyLimit,
+      rateLimitWindow,
+      rateLimitRequests,
+      rateLimitCost,
+      enableModelRestriction,
+      restrictedModels,
+      enableClientRestriction,
+      allowedClients,
+      allow1mContext,
+      dailyCostLimit,
+      totalCostLimit,
+      weeklyOpusCostLimit,
+      tags,
+      activationDays,
+      activationUnit,
+      expirationMode,
+      icon,
+      serviceRates,
+      weeklyResetDay: weeklyResetDay !== undefined && weeklyResetDay !== null && weeklyResetDay !== ''
+        ? Number(weeklyResetDay)
+        : 1,
+      weeklyResetHour: weeklyResetHour !== undefined && weeklyResetHour !== null && weeklyResetHour !== ''
+        ? Number(weeklyResetHour)
+        : 0
+    })
+
+    logger.success(`🔑 Admin created API key with hash: ${name}`)
+    return res.json({ success: true, data: newKey })
+  } catch (error) {
+    logger.error('❌ Failed to create API key with hash:', error)
+    return res.status(500).json({ error: 'Failed to create API key with hash', message: error.message })
+  }
+})
+
 // 批量创建API Keys
 router.post('/api-keys/batch', authenticateAdmin, async (req, res) => {
   try {
