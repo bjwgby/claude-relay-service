@@ -2,7 +2,7 @@ name: Docker Build and Push Pipeline
 
 on:
   push:
-    branches: [ "bjwgby-dev" ]
+    branches: [ "bjwgby-dev","hqli-dev" ]
   workflow_dispatch:
     inputs:
       image_tag:
